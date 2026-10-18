@@ -1,5 +1,5 @@
-import { SITE } from "@aihot/industry/site";
 import { useState } from "react";
+import { SITE } from "@aihot/industry/site";
 import { Link, useFetcher } from "react-router";
 import { useEffect } from "react";
 import type { Route } from "./+types/runs";
@@ -9,6 +9,7 @@ import { useAdminAction } from "../../features/admin/action";
 import { ago, bj, duration, num } from "../../features/admin/format";
 import { AdminPage, Badge, Button, Card, DataTable, Dot, Empty, Field, Json, ReasonDialog, Select, Stat, Time } from "../../features/admin/ui";
 
+
 export async function loader({ request }: Route.LoaderArgs) {
   return adminGet<AdminRuns>(request, "/api/admin/runs");
 }
@@ -16,6 +17,11 @@ export async function loader({ request }: Route.LoaderArgs) {
 export const meta: Route.MetaFunction = () => [{ title: `运行 · ${SITE.name} 后台` }];
 
 const STATE_LABEL: Record<string, string> = { created: "排队", retry: "等待重试", active: "执行中" };
+
+/** Who reports through the ingest API, named when nothing has reported yet. */
+const INGEST_CLIENTS = [
+  "采集脚本",
+];
 
 export default function RunsAdmin({ loaderData }: Route.ComponentProps) {
   const refresh = useFetcher<typeof loader>();
@@ -53,6 +59,18 @@ export default function RunsAdmin({ loaderData }: Route.ComponentProps) {
         <Stat label="回执结果未知" value={num(r.receipts.issues.filter((x) => x.status === "unknown").length)} tone={r.receipts.issues.some((x) => x.status === "unknown") ? "bad" : "ok"} hint={`7 天 ${num(Object.values(r.receipts.counts).reduce((a, b) => a + b, 0))} 次付费请求`} />
         <Stat label="投递待核实" value={num(r.deliveries.filter((d) => d.status === "unknown").length)} tone={r.deliveries.some((d) => d.status === "unknown") ? "bad" : "ok"} />
       </div>
+
+      {r.grouping.waiting > 0 && (
+        <Card className="mb-5" title="等待去重确认的精选" right={<span>{num(r.grouping.waiting)} 条等待 · {num(r.grouping.needsAttention)} 条超过 10 分钟</span>} pad={false}>
+          <p className="px-4 py-3 text-[13px] text-ink-3">这些新闻已达到精选条件，确认是否重复后才会进入精选。最多展示等待最久的 30 条。</p>
+          <DataTable dense rows={r.grouping.items} rowKey={(item) => item.articleId} columns={[
+            { key: "title", label: "新闻", render: (item) => <Link className="text-accent" to={`/admin/content/${item.articleId}`}>{item.title}</Link> },
+            { key: "since", label: "开始等待", render: (item) => <Time at={item.since} /> },
+            { key: "recovery", label: "下一步", render: (item) => <Badge tone={item.recovery === "manual" ? "bad" : "warn"}>{item.recovery === "manual" ? "需处理后恢复" : item.recovery === "receipt" ? "等待付费结果自动恢复" : "自动处理中"}</Badge> },
+            { key: "error", label: "原因", render: (item) => <span className="line-clamp-2 text-[12px] text-ink-3">{item.receiptId ? `回执 #${item.receiptId} · ` : ""}{item.error ?? "等待身份确认"}</span> },
+          ]} />
+        </Card>
+      )}
 
       <div className="grid gap-5 xl:grid-cols-2">
         <Card title="队列" pad={false}>
@@ -181,30 +199,6 @@ export default function RunsAdmin({ loaderData }: Route.ComponentProps) {
         </Card>
       </div>
 
-      {r.leaderboard && (
-        <Card
-          className="mt-5"
-          title="模型榜评测来源"
-          right={<span>最近抓取 {bj(r.leaderboard.at)} · 成功 {r.leaderboard.sources.filter((x) => x.ok).length}/{r.leaderboard.sources.length}</span>}
-          pad={false}
-        >
-          <div className="max-h-[360px] overflow-y-auto">
-            <DataTable
-              dense
-              rows={r.leaderboard.sources}
-              rowKey={(x) => x.key}
-              columns={[
-                { key: "k", label: "来源", render: (x) => <span className="font-mono text-[12.5px]">{x.key}</span> },
-                { key: "s", label: "上次抓取", render: (x) => <Badge tone={x.ok ? "ok" : "bad"}>{x.ok ? (x.changed ? "有更新" : "无变化") : "失败"}</Badge> },
-                { key: "ok", label: "上次成功", render: (x) => <Time at={x.lastOkAt} /> },
-                { key: "n", label: "行数", align: "right", render: (x) => (x.rows == null ? "—" : num(x.rows)) },
-                { key: "e", label: "错误", render: (x) => <span className="line-clamp-1 text-[12px] text-ink-3" title={x.error ?? ""}>{x.error}</span> },
-              ]}
-            />
-          </div>
-        </Card>
-      )}
-
       <div className="mt-5 grid gap-5 xl:grid-cols-2">
         <Card title="任务时间线" pad={false}>
           <div className="max-h-[420px] overflow-y-auto">
@@ -236,7 +230,7 @@ export default function RunsAdmin({ loaderData }: Route.ComponentProps) {
               ]}
             />
           ) : (
-            <Empty>还没有外部上报（公众号截图监控、采集脚本）</Empty>
+            <Empty>{`还没有外部上报（${INGEST_CLIENTS.join("、")}）`}</Empty>
           )}
         </Card>
       </div>

@@ -1,9 +1,11 @@
 // Shared setup for the invariant tests (node --test tests/). They write rows, so they refuse to run
-// unless DATABASE_URL names a throwaway database ending in _test or _ci (CI: a freshly migrated one).
-// Secrets are test values set here, never real credentials; paid providers are pointed at
-// local stubs by the tests that need them, and the push valves stay off. The files share
-// one database and its paid-service budgets, so they run one at a time (package.json).
+// unless DATABASE_URL names a throwaway database ending in _test or _ci.
+// Secrets are test values set here, never real credentials; paid providers are pointed at local stubs
+// by the tests that need them, and the push valves stay off. npm test gives each file its own copy of
+// the database (databases.ts).
+import { createHash } from "node:crypto";
 import http from "node:http";
+import { DEFAULTS, PRESETS } from "@aihot/industry/models";
 
 const database = new URL(process.env.DATABASE_URL ?? "postgres://unset/unset").pathname.slice(1);
 if (!/_(test|ci)$/.test(database)) {
@@ -15,15 +17,32 @@ process.env.IMG_PROXY_SIGN_SECRET ??= "test-img-secret-0123456789";
 process.env.FEISHU_CONTENT_PUSH_ENABLED = "false";
 process.env.INDEXNOW_SUBMIT_ENABLED = "false";
 process.env.LOG_LEVEL ??= "error";
-// The tests were written against the named model presets AIHOT assigns to each step (each provider is
-// pointed at a local stub by the test that needs it). The open-source default is one model for every
-// step, which tests/default-model.test.ts covers.
-const AIHOT_MODELS: Record<string, string> = {
-  PREFILTER_MODEL: "qwen3.7-flash", SCORE_MODEL: "glm-5.3-flash-selection", UNDERSTAND_MODEL: "glm-5.3-flash", SUMMARIZE_MODEL: "deepseek-flash",
-  STRUCTURE_MODEL: "qwen3.8-flash", GROUP_MODEL: "deepseek-flash", GROUP_REVIEW_MODEL: "mimo-v2.6-flash", DIGEST_MODEL: "deepseek-flash",
-  REPORT_MODEL: "deepseek-flash", TRANSLATE_MODEL: "deepseek-flash", MONITOR_MODEL: "deepseek-flash",
+// Paid providers are local stubs in these tests: calls and collection may run (the valves default off).
+process.env.MODEL_CALLS_ENABLED ??= "true";
+process.env.COLLECT_ENABLED ??= "true";
+// The tests were written against named model presets, one per step (each provider is pointed at a
+// local stub by the test that needs it). A step the industry pack leaves on the `default` model gets its
+// preset here; tests/default-model.test.ts covers the default.
+const STEP_MODELS: Record<string, [env: string, model: string]> = {
+  prefilter: ["PREFILTER_MODEL", "qwen3.7-flash"], score: ["SCORE_MODEL", "glm-5.3-flash-selection"], understand: ["UNDERSTAND_MODEL", "glm-5.3-flash"],
+  summarize: ["SUMMARIZE_MODEL", "deepseek-flash"], structure: ["STRUCTURE_MODEL", "qwen3.8-flash"], group: ["GROUP_MODEL", "deepseek-flash"],
+  groupReview: ["GROUP_REVIEW_MODEL", "mimo-v2.6-flash"], digest: ["DIGEST_MODEL", "deepseek-flash"], report: ["REPORT_MODEL", "deepseek-flash"],
+  translate: ["TRANSLATE_MODEL", "deepseek-flash"],
 };
-for (const [name, model] of Object.entries(AIHOT_MODELS)) process.env[name] ??= model;
+for (const [step, [env, model]] of Object.entries(STEP_MODELS)) if (!DEFAULTS[step]) process.env[env] ??= model;
+
+/**
+ * Sends the calls of the named model presets to a stub: sets each one's address and key variables, which
+ * the industry pack names. By default the providers of the article analysis (DashScope, GLM, DeepSeek).
+ */
+export function pointModels(url: string, models = ["qwen3.7-flash", "glm-5.3-flash", "deepseek-flash"], env: NodeJS.ProcessEnv = process.env) {
+  for (const name of models) {
+    const preset = PRESETS[name];
+    if (!preset) throw new Error(`the industry pack has no model preset ${name}`);
+    env[preset.baseUrlEnv] = `${url}/v1`;
+    env[preset.apiKeyEnv] = "test-key";
+  }
+}
 
 /**
  * A local HTTP stub standing in for a paid provider; `answer` builds every response from the request
@@ -45,6 +64,24 @@ export async function stub(answer: (hit: number, req: { url: string; body: strin
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", () => resolve()));
   const { port } = server.address() as { port: number };
   return { url: `http://127.0.0.1:${port}`, hits: () => hits, close: () => new Promise<void>((resolve) => server.close(() => resolve())) };
+}
+
+/**
+ * The embeddings provider as a stub of its own (DASHSCOPE_BASE_URL), so chat stubs count only their
+ * calls. A text's vector marks the pairs of adjacent characters it contains, hashed into the model's
+ * 1,024 dimensions: texts that share wording come out close, texts that share none do not.
+ */
+export async function embeddingsStub() {
+  const vector = (text: string) => {
+    const out = Array<number>(1024).fill(0);
+    const chars = [...text.replace(/\s+/g, "")];
+    for (let i = 0; i + 1 < chars.length; i++) out[createHash("sha256").update(chars[i]! + chars[i + 1]!).digest().readUInt16BE(0) % 1024] = 1;
+    return out;
+  };
+  const server = await stub((_hit, req) => ({ data: (JSON.parse(req.body).input as string[]).map((text, index) => ({ index, embedding: vector(text) })) }));
+  process.env.DASHSCOPE_BASE_URL = `${server.url}/v1`;
+  process.env.DASHSCOPE_API_KEY = "test-key";
+  return server;
 }
 
 /** A stub answer with its own status (e.g. a provider's 503); anything else is a 200 JSON body. */

@@ -21,8 +21,13 @@ export function isPoolEligible(input: {
   relevance: string | null;
   title: string | null;
   summary: string | null;
+  score?: number | null;
+  requiresScoreCheck?: boolean;
+  publicFloor?: number;
 }): boolean {
-  return input.participationMode === "editorial" && input.relevance === "pass" && !!input.title && !!input.summary;
+  if (input.participationMode !== "editorial" || input.relevance !== "pass" || !input.title || !input.summary) return false;
+  if (input.requiresScoreCheck && (input.score == null || input.score < (input.publicFloor ?? 0))) return false;
+  return true;
 }
 
 /**
@@ -35,8 +40,13 @@ export function hasItemPage(p: { visibility: string; sourceMode: string }): bool
 }
 
 /** Selected: pool eligible, judged selected, and the source tier may enter the selection. */
-export function isSelectable(eligible: boolean, judgedSelected: boolean | null, tier: string): boolean {
-  return eligible && judgedSelected === true && tier !== "EXCLUDE_MP";
+export function isSelectable(eligible: boolean, judgedSelected: boolean | null, tier: string, score?: number | null, threshold?: number | null): boolean {
+  if (!eligible || judgedSelected !== true || tier === "EXCLUDE_MP") return false;
+  if (score !== undefined || threshold !== undefined) {
+    if (score == null || threshold == null) return false;
+    return score >= threshold;
+  }
+  return true;
 }
 
 /**
@@ -63,4 +73,19 @@ export function isIndexable(p: { visibility: string; hasSummary: boolean; select
 /** Display tags exclude internal entity markers. */
 export function displayTags(tags: string[]): string[] {
   return tags.filter((t) => !t.startsWith("entity:"));
+}
+
+/**
+ * The source name readers see. Admin names carry notes for editors in full-width brackets: the channel,
+ * what a feed keeps, a person's role or why the account is followed (「OpenAI：官网动态（RSS · 排除企业/客户案例）」,
+ * 「某媒体（热点 RSS）」, 「X：Clément Delangue（Hugging Face CEO） (@ClementDelangue)」). Readers get the name
+ * without them, and an X account its display name (its handle when the name is only a note). Every
+ * exit people read uses this, and search matches it; JSON fields keep the stored name, which programs
+ * may match.
+ */
+export function publicSourceName(name: string): string {
+  let bare = name;
+  while (/（[^（）]*）/.test(bare)) bare = bare.replace(/（[^（）]*）/g, " ");
+  const x = /^X[:：]\s*(.*?)\s*(?:\(@[^)]*\))?\s*$/.exec(bare);
+  return (x ? x[1]! : bare).replace(/\s+/g, " ").trim() || /@\w+/.exec(name)?.[0] || name.trim();
 }

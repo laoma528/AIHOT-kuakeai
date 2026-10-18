@@ -1,8 +1,8 @@
-import { SITE } from "@aihot/industry/site";
+import { SITE, SOURCE_DEFAULTS } from "@aihot/industry/site";
 import { useState } from "react";
 import { Link, useNavigate } from "react-router";
-import type { AdminSourceCreated, AdminSourcePreview } from "@aihot/contracts/admin";
 import type { Route } from "./+types/source-new";
+import type { AdminSourceCreated, AdminSourcePreview } from "@aihot/contracts/admin";
 import { useAdminAction } from "../../features/admin/action";
 import { bj } from "../../features/admin/format";
 import { KIND_LABEL, MODE_LABEL, TIER_LABEL } from "../../features/admin/labels";
@@ -15,7 +15,7 @@ const TEMPLATES: Record<string, Record<string, unknown>> = {
   web_list: { url: "https://example.com/blog", baseUrl: "https://example.com", itemSelector: "article", linkSelector: "a", titleSelector: "h2", allowUrlPrefixes: ["https://example.com/blog/"] },
   json_list: { url: "https://example.com/api/posts", mode: "json_api", method: "GET", itemsPath: "data.items", titlePaths: ["title"], urlTemplate: "{raw:url}", summaryPaths: ["summary"] },
   x_search: { query: "from:handle -filter:replies", searchType: "Latest" },
-  mp_account: { biz: "", name: "" },
+  mp_account: { ghid: "gh_", nickname: "" },
   external: {},
 };
 
@@ -23,11 +23,12 @@ const TEMPLATES: Record<string, Record<string, unknown>> = {
 export default function NewSource() {
   const navigate = useNavigate();
   const { run, pending } = useAdminAction();
-  const [form, setForm] = useState({ id: "", name: "", kind: "rss", tier: "T2", participation_mode: "editorial", interval_minutes: 30, first_party: false, site_fulltext: true, syndicate_fulltext: false, tags: "" });
+  const [form, setForm] = useState({ id: "", name: "", kind: "rss", tier: "T2", participation_mode: "editorial", interval_minutes: 30, first_party: false, site_fulltext: SOURCE_DEFAULTS.siteFulltext, syndicate_fulltext: false, tags: "" });
   const [config, setConfig] = useState(JSON.stringify(TEMPLATES.rss, null, 2));
   const [error, setError] = useState<string | null>(null);
   const [preview, setPreview] = useState<AdminSourcePreview | null>(null);
   const [duplicate, setDuplicate] = useState<{ id: string; name: string } | null>(null);
+  const canPreview = form.kind !== "mp_account" && form.kind !== "external";
 
   const parsed = () => {
     try {
@@ -40,7 +41,7 @@ export default function NewSource() {
   };
 
   return (
-    <AdminPage title="新建信源" subtitle="先判重、先预览：优先 RSS/JSON 等稳定协议；首抓成功且有真实条目才算接入完成。一手身份要有运营主体或官方交叉链接证据。">
+    <AdminPage title="新建信源" subtitle="RSS、网页列表、JSON 和 X 信源可先预览；公众号信源创建后在详情页采集并检查结果。首抓成功且有真实条目才算接入完成。">
       <div className="grid gap-5 xl:grid-cols-[1fr_420px]">
         <Card title="信源定义">
           <div className="grid gap-4 sm:grid-cols-2">
@@ -70,7 +71,7 @@ export default function NewSource() {
                 {Object.entries(MODE_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
               </Select>
             </Field>
-            <Field label="等级">
+            <Field label="等级" hint="仅 T1 为一手信源">
               <Select value={form.tier} onChange={(e) => setForm({ ...form, tier: e.target.value })}>
                 {Object.entries(TIER_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
               </Select>
@@ -80,7 +81,6 @@ export default function NewSource() {
             </Field>
             <div className="flex flex-col justify-end gap-2 text-[13px] text-ink-2">
               {([
-                ["first_party", "一手信源"],
                 ["site_fulltext", "站内可展示全文"],
                 ["syndicate_fulltext", "对外接口可带全文"],
               ] as const).map(([k, label]) => (
@@ -105,6 +105,7 @@ export default function NewSource() {
           <div className="mt-5 flex justify-end gap-2">
             <Button
               busy={pending === "preview"}
+              disabled={!canPreview}
               onClick={async () => {
                 const c = parsed();
                 if (!c) return;
@@ -138,7 +139,11 @@ export default function NewSource() {
         </Card>
         <Card title={preview ? `预览：${preview.count} 条（${preview.ms}ms）` : "预览"}>
           {!preview ? (
-            <Empty>填好配置后点“预览抓取”，这里显示将会采集到的条目（不入库）。</Empty>
+            <Empty>{form.kind === "mp_account"
+              ? "公众号信源不支持预览。填写 ID、名称及采集配置后创建，在信源详情点击“立即采集”，然后查看采集记录和最近条目。"
+              : form.kind === "external"
+                ? "外部上报信源不支持主动预览。创建后通过推送接口提交条目。"
+                : "填好配置后点“预览抓取”，这里显示将会采集到的条目（不入库）。"}</Empty>
           ) : preview.items.length ? (
             <ul className="space-y-3">
               {preview.items.map((i) => (

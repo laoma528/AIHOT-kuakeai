@@ -1,9 +1,9 @@
-import { SITE } from "@aihot/industry/site";
 import { useEffect, useState } from "react";
 import { Link, useLocation } from "react-router";
-import { Wordmark } from "../Logo";
+import { SITE } from "@aihot/industry/site";
+import { Wordmark } from "@aihot/industry/brand/Logo.tsx";
 import { useChangelogSeen } from "../../lib/local-state";
-import { SIDEBAR, tabIsActive, type NavItem } from "./nav";
+import { SIDEBAR, sidebarIsActive, type NavItem } from "./nav";
 import { ThemeSwitch } from "./ThemeSwitch";
 
 /** True while the changelog has an entry newer than the one this reader last opened. */
@@ -17,8 +17,7 @@ export function useChangelogDot(latestVersion: string | null): boolean {
 
 function SideLink({ item, dot }: { item: NavItem; dot: boolean }) {
   const { pathname } = useLocation();
-  // Weekly and monthly reports belong to the daily report entry, as the phone tab bar has it.
-  const isActive = tabIsActive(item, pathname);
+  const isActive = sidebarIsActive(item, pathname);
   const Icon = item.icon;
   return (
     <Link
@@ -43,7 +42,7 @@ export function Sidebar({ changelogVersion }: { changelogVersion: string | null 
   return (
     <aside className="sticky top-0 hidden h-dvh w-[180px] shrink-0 flex-col border-r border-line bg-sidebar px-3 pb-3.5 pt-6 lg:flex">
       <Link to="/" className="mb-4 flex h-[50px] items-center px-1 text-ink" aria-label={`${SITE.name} 首页`}>
-        <Wordmark size={24} />
+        <Wordmark size={26} />
       </Link>
       <nav className="-mx-1 flex-1 overflow-y-auto px-1" aria-label="主导航">
         {SIDEBAR.map((section) => (

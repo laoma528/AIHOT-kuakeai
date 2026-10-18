@@ -1,0 +1,11 @@
+-- Stored state nothing reads or writes any more (tests/architecture.test.ts names such leftovers):
+--   regroup_pending                 the one-off regroup queue, retired with its job
+--   story_digests.context_article_ids  the digest's former input record; digests rebuild from the listed reports
+--   stories.status                  readers get a status computed from the latest public report
+--   sources.imported_from           an import label nothing reads
+--   translations.receipt_id         never written
+--   admin_users.role                could only ever be 'admin'
+--   stored_files                    nothing in this edition stores files through it
+--   service_prices.note, verified_on, per_request, source_url  bookkeeping only an operations page read
+-- Preserve this state during the 4.0 upgrade; the application no longer reads it.
+SELECT 1;

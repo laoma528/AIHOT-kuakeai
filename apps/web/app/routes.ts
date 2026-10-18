@@ -27,8 +27,6 @@ export default [
   route("more", "routes/more.tsx"),
   route("starred", "routes/starred.tsx"),
   route("agent", "routes/agent.tsx"),
-  route("codex-reset", "routes/codex-reset.tsx"),
-  route("codex-reset/history/:date", "routes/codex-reset.tsx", { id: "codex-reset-day" }),
   layout("routes/leaderboard-boards.tsx", [
     route("leaderboard", "routes/leaderboard.tsx", { id: "leaderboard" }),
     route("leaderboard/category/:key", "routes/leaderboard.tsx", { id: "leaderboard-category" }),
@@ -45,7 +43,6 @@ export default [
     route("admin/sources", "routes/admin/sources.tsx"),
     route("admin/sources/new", "routes/admin/source-new.tsx"),
     route("admin/sources/:id", "routes/admin/source.tsx"),
-    route("admin/monitor", "routes/admin/monitor.tsx"),
     route("admin/feedback", "routes/admin/feedback.tsx"),
     route("admin/runs", "routes/admin/runs.tsx"),
     route("admin/models", "routes/admin/models.tsx"),

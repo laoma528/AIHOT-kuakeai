@@ -1,19 +1,13 @@
 // Share posters (1080×1440 PNG) for articles, made for phones: saved from the page or long-pressed in
 // chat apps. Same font pipeline as the share cards; the QR code opens the article on the site.
-import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
-import path from "node:path";
-import { createHash, randomUUID } from "node:crypto";
-import satori from "satori";
-import sharp from "sharp";
+import { createHash } from "node:crypto";
 import { renderSVG } from "uqr";
 import { SITE } from "@aihot/industry/site";
-import { config } from "@aihot/backend/config";
-import { fonts, h, nameMark, OG_PNG, SITE_HOST, type Node } from "./render.ts";
+import { brandMark, clamp, h, nameMark, renderPng, SITE_HOST, type Node } from "./render.ts";
 
 export const POSTER_TEMPLATE_VERSION = "poster-2026-09-29.1";
 const WIDTH = 1080;
 const HEIGHT = 1440;
-const CACHE_DIR = path.join(config.dataDir, "ogcache");
 
 export interface Poster {
   url: string;
@@ -23,12 +17,6 @@ export interface Poster {
   source: string;
   date: string;
   score: number | null;
-}
-
-
-function clamp(text: string, max: number) {
-  const chars = [...text.replace(/\s+/g, " ").trim()];
-  return chars.length > max ? `${chars.slice(0, max - 1).join("")}…` : chars.join("");
 }
 
 const INK = "#0e191b";
@@ -56,7 +44,7 @@ async function tree(p: Poster): Promise<Node> {
     },
     [
       h("div", { display: "flex", alignItems: "center", justifyContent: "space-between" }, [
-        nameMark(44, INK, ACCENT),
+        (await brandMark("wordmark.svg", 50)) ?? nameMark(44, INK, ACCENT),
         h("div", { display: "flex", fontSize: 26, color: "#66757a" }, p.date),
       ]),
       h("div", { display: "flex", alignItems: "center", marginTop: 96 }, [
@@ -88,34 +76,11 @@ async function tree(p: Poster): Promise<Node> {
 }
 
 export function posterEtag(p: Poster): string {
-  return createHash("sha256").update(POSTER_TEMPLATE_VERSION).update(SITE.name).update(SITE_HOST).update(JSON.stringify(p)).digest("hex").slice(0, 24);
+  return createHash("sha256").update(POSTER_TEMPLATE_VERSION).update(JSON.stringify(p)).digest("hex").slice(0, 24);
 }
 
 /** PNG bytes for a poster, from the disk cache when this exact poster was rendered before. */
-const inflight = new Map<string, Promise<{ png: Buffer; etag: string }>>();
-
-export function renderPoster(p: Poster): Promise<{ png: Buffer; etag: string }> {
+export async function renderPoster(p: Poster): Promise<{ png: Buffer; etag: string }> {
   const etag = posterEtag(p);
-  let job = inflight.get(etag);
-  if (!job) {
-    job = render(p, etag).finally(() => inflight.delete(etag));
-    inflight.set(etag, job);
-  }
-  return job;
-}
-
-async function render(p: Poster, etag: string): Promise<{ png: Buffer; etag: string }> {
-  const file = path.join(CACHE_DIR, `poster-${etag}.png`);
-  try {
-    return { png: await readFile(file), etag };
-  } catch {
-    // not cached yet
-  }
-  const svg = await satori((await tree(p)) as never, { width: WIDTH, height: HEIGHT, fonts: await fonts() });
-  const png = await sharp(Buffer.from(svg)).png(OG_PNG).toBuffer();
-  await mkdir(CACHE_DIR, { recursive: true });
-  const tmp = `${file}.${process.pid}.${randomUUID()}.tmp`;
-  await writeFile(tmp, png);
-  await rename(tmp, file);
-  return { png, etag };
+  return { png: await renderPng(`poster-${etag}`, { width: WIDTH, height: HEIGHT }, () => tree(p)), etag };
 }
